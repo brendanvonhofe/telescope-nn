@@ -27,6 +27,6 @@ class MatteRefinementLayer(nn.Module):
         out = self.relu3(out)
         
         out = self.conv4(out)
-        out = out + x[:, 3, :, :]
+        out = out + x[:, 3, :, :].unsqueeze(1)
         
         return out

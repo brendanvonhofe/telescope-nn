@@ -1,8 +1,0 @@
-{
-    "batch_size": 16,
-    "pretrained_model": "modelv0_16.pt",
-    "pretrained_refine": "refinev0_16.pt",
-    "savename": "modelv0_20.pt",
-    "savename_r": "refinev0_20.pt",
-    "iterations": 250
-}

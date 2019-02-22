@@ -2,7 +2,10 @@ from pathlib import Path
 import json # For config file
 import time
 import copy
+import os
+import argparse
 from datetime import datetime
+from tqdm import tqdm
 import numpy as np
 import torch
 import torch.nn as nn
@@ -14,162 +17,200 @@ from dataset import getTransforms, MatteDataset
 from architecture.linknet import LinkNet34
 from architecture.refinement_layer import MatteRefinementLayer
 
-PATH = Path('../data/processed/train/')
-VAL = Path('../data/processed/val/')
+PATH = Path('data/processed/train/')
+VAL = Path('data/processed/val/')
 BG = PATH/'bg'
 FG = PATH/'fg'
 MASKS = PATH/'mattes'
-MODELS = Path('../models')
+MODELS = Path('models')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-print('Training on device: ', device)
+print('Training on device:', device)
+
+def get_args():
+    # Config settings and hyperparameters
+    parser = argparse.ArgumentParser(description='Deep Image Matting training')
+    parser.add_argument('--batch_size', type=int, required=True, help='training batch size')
+    parser.add_argument('--threads', type=int, required=True, help='number of workers for dataset generation')
+    parser.add_argument('--stage', type=int, required=True, help='0 -> just enc-dec, 1 -> just refine, 2 -> both')
+    parser.add_argument('--save_dir', type=str, required=True, help='dst to save checkpoint')
+    parser.add_argument('--epochs', type=int, default=-1, help='number of epochs to train for, -1 -> train current stage')
+    parser.add_argument('--checkpoint', type=str, default='vgg16', help='directory to load checkpoints from')
+    args = parser.parse_args()
+    print(args)
+    return args
 
 def main():
-    
-    # CONFIGURATION
+    # Load args
+    args = get_args()
 
-    # Load configuration file
-    with open("utils/config.json", "r") as read_file:
-        config = json.load(read_file)
-
-    # Set config variables
-    batch_size = config['batch_size']
-    pretrained = config['pretrained_model']
-    pretrained_r = config['pretrained_refine'] # Refinement network
-    savename = config['savename']
-    savename_r = config['savename_r'] # Refinement metwork
-    iterations = config['iterations'] # Using iterations, not epochs
-
-    # LOAD DATASET
-
+    # Load Dataset 
     data_transform = getTransforms() # Consider adding additional transforms
-
     image_datasets = {'train': MatteDataset(root_dir=PATH, transform=data_transform),
                   'val': MatteDataset(root_dir=VAL, transform=data_transform)}
-    dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=batch_size,
-                                                shuffle=True, num_workers=8)
+    dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=args.batch_size,
+                                                shuffle=True, num_workers=args.threads)
                 for x in ['train', 'val']}
     dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
 
-    # SETUP MODEL
+    # Setup Model
+    epoch = 0
+    encdec = LinkNet34(1)
+    if(args.checkpoint != 'vgg16'):
+        save_name = os.listdir(args.checkpoint + '/encdec/')[0]
+        print("Loading encoder-decoder:", save_name)
+        ckpt = torch.load(args.checkpoint + '/encdec/' + save_name)
+        epoch = ckpt['epoch']
+        encdec.load_state_dict(ckpt['state_dict'])
+        # encdec.load_state_dict(ckpt)
+        encdec = encdec.to(device)
+        if(args.stage != 0):
+            save_name = os.listdir(args.checkpoint + '/refinement/')[0]
+            print("Loading refinement:", save_name)
+            refinement = MatteRefinementLayer()
+            ckpt = torch.load(args.checkpoint + '/refinement/' + save_name)
+            refinement.load_state_dict(ckpt['state_dict'])
+            # refinement.load_state_dict(ckpt)
+            refinement = refinement.to(device)
 
-    telescope = LinkNet34(1)
-    refinement = MatteRefinementLayer()
-    if(len(pretrained)):
-        print("Loading weights from", pretrained)
-        telescope.load_state_dict(torch.load(MODELS/pretrained))
-        refinement.load_state_dict(torch.load(MODELS/pretrained_r))
-    telescope = telescope.to(device)
-    refinement = refinement.to(device)
-
-    criterion = AlphaCompLoss_u()
-    criterion_r = AlphaLoss()
-    optimizer = optim.Adam(telescope.parameters(), lr=1e-5)
-    optimizer_r = optim.Adam(refinement.parameters(), lr=1e-5)
-    model = telescope
-    model_r = refinement
-
+    # _ed suffix refers to encoder-decoder part of the model, 
+    # _r suffix refers to refinement part
+    crit_ed = AlphaCompLoss_u()
+    crit_r = AlphaLoss_u()
+    optim_ed = optim.Adam(encdec.parameters(), lr=1e-5)
+    optim_r = optim.Adam(refinement.parameters(), lr=1e-5)
 
     # TRAIN
 
-    print(datetime.now())
-    since = time.time()
+    # Writers for TensorBoard
+    train_writer = SummaryWriter('logs/train' + args.save_dir)
+    val_writer = SummaryWriter('logs/val' + args.save_dir)
 
-    it = 0
-
-    writer = SummaryWriter('../logs/' + savename)
-
-    best_model_wts = copy.deepcopy(model.state_dict())
-    best_model_wts_r = copy.deepcopy(model_r.state_dict())
-    best_loss = 50000 # CHECK THIS
+    # best_model_wts_ed = copy.deepcopy(encdec.state_dict())
+    # best_model_wts_r = copy.deepcopy(refinement.state_dict())
+    # best_loss = 50000 # CHECK THIS
     
-    num_epochs = int(iterations / 250)
-    for epoch in range(num_epochs):
-        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
-        print('-' * 10)
-
+    for e in tqdm(range(args.epochs)):
         # Each epoch has a training and validation phase
         for phase in ['train', 'val']:
             if phase == 'train':
-                model.train()  # Set model to training mode
-                model_r.train()
+                if(args.stage == 0):
+                    encdec.train()
+                elif(args.stage == 1):
+                    encdec.eval()
+                    refinement.train()
+                elif(args.stage == 2):
+                    encdec.train()
+                    refinement.train()
             else:
-                model.eval()   # Set model to evaluate mode
-                model_r.eval()
+                encdec.eval()   # Set model to evaluate mode
+                if(args.stage != 0):
+                    refinement.eval()
 
-            running_loss = []
+            if(args.stage != 1):
+                running_loss_ed = []
+            if(args.stage != 0):
+                running_loss_r = []
 
-            # Iterate over data.
-            for i, sample in enumerate(dataloaders[phase]):
-                if(phase=='train'):
-                    it += 1
-                if(i != 0 and i % 250 == 0 and phase == 'train'):
-                    break
-                inputs, labels, fg, bg = sample['im_map'], sample['mask'], sample['fg'], sample['bg']
-                inputs = inputs.to(device)
+            # Iterate over dataset.
+            for i, sample in tqdm(enumerate(dataloaders[phase])):
+                # Get inputs and labels, put them on GPU
+                inputs_ed, labels, fg, bg = sample['im_map'], sample['mask'], sample['fg'], sample['bg']
+                inputs_ed = inputs_ed.to(device)
                 labels = labels.to(device)
                 fg = fg.to(device)
                 bg = bg.to(device)
-                trimap = inputs[:,3,:,:]
+                trimap = inputs_ed[:,3,:,:]
 
-                # zero the parameter gradients
-                optimizer.zero_grad()
+                # zero the gradients
+                optim_ed.zero_grad()
+                optim_r.zero_grad()
+                
+                # Calculate loss
+                with torch.set_grad_enabled(phase == 'train'): # Only track grads if in train mode
+                    outputs_ed = encdec(inputs_ed) # Output is single channel matte
 
-                # forward
-                # track history if only in train
-                with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(inputs) # Output is single channel matte
-                    r_inputs = torch.cat((inputs[:,:3,:,:], outputs), 1)
-                    r_outputs = model_r(r_inputs)
+                    if(args.stage != 0):
+                        inputs_r = torch.cat((inputs_ed[:,:3,:,:], outputs_ed), 1)
+                        outputs_r = refinement(inputs_r)
+
                     # _, preds = torch.max(outputs, 1)
-                    loss = criterion(outputs, labels, fg, bg, trimap)
-                    loss_r = criterion_r(r_outputs, labels, trimap)
-                    # loss = criterion(outputs, labels, fg, bg)
-                    running_loss.append(loss_r.item()/batch_size)
-                    print("Loss at step {}: {}".format(i, loss_r/batch_size))
+
+                    if(args.stage != 1):
+                        loss_ed = crit_ed(outputs_ed, labels, fg, bg, trimap)
+                        running_loss_ed.append(loss_ed.item())
+                    if(args.stage != 0):
+                        loss_r = crit_r(outputs_r, labels, trimap)
+                        running_loss_r.append(loss_r.item())
 
                     # backward + optimize only if in training phase
-                    if phase == 'train':
-                        writer.add_scalar('train_loss', loss_r/batch_size, it)
-                        # loss.backward()
-                        loss_r.backward()
-                        optimizer.step()
-                        optimizer_r.step()
+                    if(phase == 'train'):
+                        if(args.stage == 0):
+                            loss_ed.backward()
+                            optim_ed.step()
+                        if(args.stage == 1):
+                            loss_r.backward()
+                            optim_r.step()
+                        if(args.stage != 2):
+                            loss_r.backward()
+                            optim_ed.step()
+                            optim_r.step()
 
-            epoch_loss = np.array(running_loss).mean()
-            writer.add_scalar(phase + "epoch_loss", epoch_loss, it)
-            
-            print('{} Loss: {:.4f}'.format(
-                phase, epoch_loss))
-
-            # deep copy the model
-            if phase == 'val' and epoch_loss < best_loss:
-                best_loss = epoch_loss
-                best_model_wts = copy.deepcopy(model.state_dict())
-                best_model_wts_r = copy.deepcopy(model_r.state_dict())
+            # Record average epoch loss for TensorBoard
+            epoch_loss_ed = np.array(running_loss_ed).mean()
+            epoch_loss_r = np.array(running_loss_r).mean()
+            if(phase == 'train'):
+                if(args.stage != 1):
+                    train_writer.add_scalar("Encoder-Decoder_Loss", epoch_loss_ed, epoch + e)
+                if(args.stage != 0):
+                    train_writer.add_scalar("Refinement_Loss", epoch_loss_r, epoch + e)
                 
-            print("Saving model at", savename)
-            torch.save(model.state_dict(), MODELS/savename)
-            torch.save(model_r.state_dict(), MODELS/savename_r)
+            if(phase == 'val'):
+                if(args.stage != 1):
+                    val_writer.add_scalar("Encoder-Decoder_Loss", epoch_loss_ed, epoch + e)
+                if(args.stage != 0):
+                    val_writer.add_scalar("Refinement_Loss", epoch_loss_r, epoch + e)
 
-    print(datetime.now())
+            # deep copy the best model
+            # if(phase == 'val' and epoch_loss < best_loss):
+            #     best_loss = epoch_loss
+            #     best_model_wts = copy.deepcopy(model.state_dict())
+            #     best_model_wts_r = copy.deepcopy(model_r.state_dict())
 
-    time_elapsed = time.time() - since
-    print('Training complete in {:.0f}m {:.0f}s'.format(
-        time_elapsed // 60, time_elapsed % 60))
-    print('Best val Loss: {:4f}'.format(best_loss))
+    # print('Best val Loss: {:4f}'.format(best_loss))
 
-    writer.close()
+    train_writer.close()
+    val_writer.close()
+
+    print("Saving model at {}".format(args.save_dir))
+    checkpoint(args.epochs+epoch-1, args.save_dir, encdec, encdec=True)
+    if(args.stage != 0):
+        checkpoint(args.epochs+epoch-1, args.save_dir, refinement, encdec=False)
+
     # load best model weights
-    model.load_state_dict(best_model_wts)
-    model_r.load_state_dict(best_model_wts_r)
-
-    torch.save(telescope.state_dict(), MODELS/savename)
+    # model.load_state_dict(best_model_wts)
+    # model_r.load_state_dict(best_model_wts_r)
+    # torch.save(telescope.state_dict(), MODELS/savename)
 
 def composite(fg, bg, alpha):
     foreground = torch.mul(alpha, fg)
     background = torch.mul(1.0 - alpha, bg)
     return torch.add(foreground, background)
+
+def checkpoint(epoch, save_dir, model, encdec=True):
+    if(encdec):
+        model_out_path = "{}/encdec/ckpt_encdec_e{}.pth".format(save_dir, epoch)
+    else:
+        model_out_path = "{}/refinement/ckpt_refinement_e{}.pth".format(save_dir, epoch)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+        os.makedirs(save_dir + '/encdec')
+        os.makedirs(save_dir + '/refinement')
+    torch.save({
+        'epoch': epoch + 1,
+        'state_dict': model.state_dict(),
+    }, model_out_path )
+    print("Checkpoint saved to {}".format(model_out_path))
 
 class _Loss(nn.Module):
     def __init__(self, size_average=None, reduce=None, reduction='mean'):
@@ -179,22 +220,22 @@ class _Loss(nn.Module):
         else:
             self.reduction = reduction
 
-class AlphaLoss(_Loss):
+class AlphaLoss_u(_Loss):
     def __init__(self, eps=1e-6):
-        super(AlphaLoss, self).__init__()
+        super(AlphaLoss_u, self).__init__()
         self.eps = eps
 
     def forward(self, p_mask, gt_mask, trimap):
         return alpha_loss_u(p_mask, gt_mask, trimap, self.eps)
     
-class AlphaCompLoss(_Loss):
-    def __init__(self, eps=1e-6):
-        super(AlphaCompLoss, self).__init__()
-        self.eps = eps
+# class AlphaCompLoss(_Loss):
+#     def __init__(self, eps=1e-6):
+#         super(AlphaCompLoss, self).__init__()
+#         self.eps = eps
         
-    def forward(self, p_mask, gt_mask, fg, bg):
-        return alpha_loss(p_mask, gt_mask, self.eps) + \
-               comp_loss(p_mask, gt_mask, fg, bg, self.eps)
+#     def forward(self, p_mask, gt_mask, fg, bg):
+#         return alpha_loss(p_mask, gt_mask, self.eps) + \
+#                comp_loss(p_mask, gt_mask, fg, bg, self.eps)
     
 class AlphaCompLoss_u(_Loss):
     def __init__(self, eps=1e-6):
@@ -202,32 +243,41 @@ class AlphaCompLoss_u(_Loss):
         self.eps = eps
         
     def forward(self, p_mask, gt_mask, fg, bg, trimap):
-        return alpha_loss_u(p_mask, gt_mask, trimap, self.eps) + \
-               comp_loss_u(p_mask, gt_mask, fg, bg, trimap, self.eps)
+        return (0.5 * alpha_loss_u(p_mask, gt_mask, trimap, self.eps)) + \
+               (0.5 * comp_loss_u(p_mask, gt_mask, fg, bg, trimap, self.eps))
 
-def alpha_loss(p_mask, gt_mask, eps=1e-6):
-    return torch.sqrt(gt_mask.sub(p_mask).pow(2).mean() + eps)
+# def alpha_loss(p_mask, gt_mask, eps=1e-6):
+#     return torch.sqrt(gt_mask.sub(p_mask).pow(2).mean() + eps)
 
 def alpha_loss_u(p_mask, gt_mask, trimap, eps=1e-6):
     # only counts loss in "unknown" region of trimap
+
     sqr_diff = gt_mask.sub(p_mask).pow(2)
     unknown = torch.eq(trimap, torch.FloatTensor(np.ones(gt_mask.shape)*(128./255)).to(device)).float()
-    return torch.sqrt(torch.mul(sqr_diff, unknown).mean() + eps)
+    loss = torch.mul(sqr_diff, unknown)
+    image_loss = torch.sum(torch.sum(torch.sum(loss, dim=1), dim=1), dim=1)
+    alpha_loss = torch.sqrt(image_loss.mean() + eps)
+    return alpha_loss
 
-def comp_loss(p_mask, gt_mask, fg, bg, eps=1e-6):
-    gt_comp = composite(fg, bg, gt_mask)
-    p_comp = composite(fg, bg, p_mask)
-    return torch.sqrt(gt_comp.sub(p_comp).pow(2).sum() + eps)
+# def comp_loss(p_mask, gt_mask, fg, bg, eps=1e-6):
+#     gt_comp = composite(fg, bg, gt_mask)
+#     p_comp = composite(fg, bg, p_mask)
+#     return torch.sqrt(gt_comp.sub(p_comp).pow(2).sum() + eps)
 
 def comp_loss_u(p_mask, gt_mask, fg, bg, trimap, eps=1e-6):
     # only counts loss in "unknown" region of trimap
-    gt_comp = composite(fg, bg, gt_mask)
-    p_comp = composite(fg, bg, p_mask)
+
+    gt_comp = composite(fg, bg, gt_mask) * (1./255)
+    p_comp = composite(fg, bg, p_mask) * (1./255)
     bs, h, w = trimap.shape
     ones = torch.FloatTensor(np.ones(trimap.shape)*(128./255)).to(device)
     unknown = torch.eq(trimap, ones).float().expand(3, bs, h, w).contiguous().view(bs,3,h,w)
     s_diff = gt_comp.sub(p_comp).pow(2)
-    return torch.sqrt(torch.mul(s_diff, unknown).sum() + eps)
+    loss = torch.mul(s_diff, unknown)
+    image_loss = torch.sum(torch.sum(torch.sum(loss, dim=1), dim=1), dim=1)
+    comp_loss = torch.sqrt(image_loss.mean() + eps)
+    return comp_loss
+
 
 if __name__ == "__main__":
     main()
