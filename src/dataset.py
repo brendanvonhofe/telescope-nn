@@ -7,24 +7,24 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 import random
+from pathlib import Path
 
 class MatteDataset(Dataset):    
-    def __init__(self, filenames, root_dir, fg_path, transform=None):
-        self.fns = filenames
+    def __init__(self, root_dir, transform=None):
         self.root_dir = root_dir
+        self.fg_fns = os.listdir(Path(root_dir/'fg'))
+        self.bg_fns = os.listdir(Path(root_dir/'bg'))
         self.transform = transform
-        self.fg_path = fg_path
-        self.fgs = os.listdir(self.fg_path)
         
     def __len__(self):
-        return len(self.fns)
+        return len(self.fg_fns)
     
     def __getitem__(self, idx):
         # Read in foreground, background and alpha mask for foreground
-        fn = self.fgs[np.random.randint(0, len(self.fgs))] # Random foreground
-        fg = io.imread(self.fg_path/fn)
-        mask = io.imread(self.root_dir/'mattes'/fn)
-        bg = io.imread(self.root_dir/'bg'/self.fns[idx])
+        bg_fn = self.bg_fns[np.random.randint(0, len(self.bg_fns))] # Random background
+        fg = io.imread(self.root_dir/'fg'/self.fg_fns[idx])
+        mask = io.imread(self.root_dir/'mattes'/self.fg_fns[idx])
+        bg = io.imread(self.root_dir/'bg'/bg_fn)
         
         # Resize to fit be same as background
         bg = bg.astype(np.float64)
@@ -43,12 +43,12 @@ class MatteDataset(Dataset):
         trimap = gen_trimap(mask)
         
         # Pad images 
-        if(image.shape[0] < 333 or image.shape[1] < 333):
-            image = cv2.resize(image, (333, 333))
-            trimap = np.expand_dims(cv2.resize(trimap, (333, 333)), -1)
-            mask = np.expand_dims(cv2.resize(mask, (333, 333)), -1)
-            fg = cv2.resize(fg, (333, 333))
-            bg = cv2.resize(bg, (333, 333))
+        if(image.shape[0] < 320 or image.shape[1] < 320):
+            image = cv2.resize(image, (320, 320))
+            trimap = np.expand_dims(cv2.resize(trimap, (320, 320)), -1)
+            mask = np.expand_dims(cv2.resize(mask, (320, 320)), -1)
+            fg = cv2.resize(fg, (320, 320))
+            bg = cv2.resize(bg, (320, 320))
 
         # Concatenate image and trimap to make (h, w, 4) shape input
         im_map = np.concatenate((image, trimap), axis=2)
@@ -71,6 +71,7 @@ class RandomCrop(object):
         output_size (tuple or int): Desired output size. If int, square crop
             is made.
     """
+    # adapted from Pytorch Tutorial
 
     def __init__(self, output_size):
         assert isinstance(output_size, (int, tuple))
@@ -99,6 +100,7 @@ class RandomCrop(object):
 
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
+    # adapted from Pytorch tutorial
 
     def __call__(self, sample):
         im_map, mask, bg, fg = sample['im_map'], sample['mask'], sample['bg'], sample['fg']
@@ -114,14 +116,6 @@ class ToTensor(object):
                 'mask': torch.from_numpy(mask).float(),
                 'bg': torch.from_numpy(bg).float(),
                 'fg': torch.from_numpy(fg).float()}
-
-def getTrainValSplit(path):
-    fns = np.array(os.listdir(path))
-    val_idxs = [i for i in range(0,int(len(fns)/80))]
-    val_fns = fns[:int(len(fns)/80)]
-    train_idxs = list(set([i for i in range(0,len(fns))]).difference(set(val_idxs)))
-    train_fns = fns[train_idxs]
-    return train_fns, val_fns
 
 def getTransforms():
     return transforms.Compose([RandomCrop(320), ToTensor()])

@@ -10,11 +10,12 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from tensorboardX import SummaryWriter
 
-from data.dataset import getTrainValSplit, getTransforms, MatteDataset
+from dataset import getTrainValSplit, getTransforms, MatteDataset
 from architecture.linknet import LinkNet34
 from architecture.refinement_layer import MatteRefinementLayer
 
 PATH = Path('../data/processed/train/')
+VAL = Path('../data/processed/val/')
 BG = PATH/'bg'
 FG = PATH/'fg'
 MASKS = PATH/'mattes'
@@ -41,11 +42,10 @@ def main():
 
     # LOAD DATASET
 
-    train_fns, val_fns = getTrainValSplit(BG)
     data_transform = getTransforms() # Consider adding additional transforms
 
-    image_datasets = {'train': MatteDataset(train_fns, root_dir=PATH, fg_path=FG, transform=data_transform),
-                  'val': MatteDataset(val_fns, root_dir=PATH, fg_path=FG, transform=data_transform)}
+    image_datasets = {'train': MatteDataset(root_dir=PATH, transform=data_transform),
+                  'val': MatteDataset(root_dir=VAL, transform=data_transform)}
     dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=batch_size,
                                                 shuffle=True, num_workers=8)
                 for x in ['train', 'val']}
