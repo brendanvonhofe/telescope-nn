@@ -27,4 +27,4 @@ Create environment and install dependencies with
 conda env create -f env.yml
 ```
 
-Then just go into ```src``` and run ```data/build_dataset.sh``` followed by ```train.py``` to get started.
+Run ```build_dataset.sh``` and then ```train.sh```.
