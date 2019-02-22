@@ -43,12 +43,12 @@ class MatteDataset(Dataset):
         trimap = gen_trimap(mask)
         
         # Pad images 
-        if(image.shape[0] < 320 or image.shape[1] < 320):
-            image = cv2.resize(image, (320, 320))
-            trimap = np.expand_dims(cv2.resize(trimap, (320, 320)), -1)
-            mask = np.expand_dims(cv2.resize(mask, (320, 320)), -1)
-            fg = cv2.resize(fg, (320, 320))
-            bg = cv2.resize(bg, (320, 320))
+        if(image.shape[0] < 333 or image.shape[1] < 333):
+            image = cv2.resize(image, (333, 333))
+            trimap = np.expand_dims(cv2.resize(trimap, (333, 333)), -1)
+            mask = np.expand_dims(cv2.resize(mask, (333, 333)), -1)
+            fg = cv2.resize(fg, (333, 333))
+            bg = cv2.resize(bg, (333, 333))
 
         # Concatenate image and trimap to make (h, w, 4) shape input
         im_map = np.concatenate((image, trimap), axis=2)

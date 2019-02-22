@@ -10,7 +10,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from tensorboardX import SummaryWriter
 
-from dataset import getTrainValSplit, getTransforms, MatteDataset
+from dataset import getTransforms, MatteDataset
 from architecture.linknet import LinkNet34
 from architecture.refinement_layer import MatteRefinementLayer
 
@@ -62,8 +62,8 @@ def main():
     telescope = telescope.to(device)
     refinement = refinement.to(device)
 
-    criterion = dim_loss_weighted()
-    criterion_r = ap_loss()
+    criterion = AlphaCompLoss_u()
+    criterion_r = AlphaLoss()
     optimizer = optim.Adam(telescope.parameters(), lr=1e-5)
     optimizer_r = optim.Adam(refinement.parameters(), lr=1e-5)
     model = telescope
@@ -179,28 +179,48 @@ class _Loss(nn.Module):
         else:
             self.reduction = reduction
 
-def alpha_pred_loss(p_mask, gt_mask, eps=1e-6):
-    return torch.sqrt(gt_mask.sub(p_mask).pow(2).sum() + eps)
-
-def alpha_pred_loss_weighted(p_mask, gt_mask, trimap, eps=1e-6):
-    sqr_diff = gt_mask.sub(p_mask).pow(2)
-    unknown = torch.eq(trimap, torch.FloatTensor(np.ones(gt_mask.shape)*(128./255)).to(device)).float()
-    return torch.sqrt(torch.mul(sqr_diff, unknown).sum() + eps)
-
-class ap_loss(_Loss):
+class AlphaLoss(_Loss):
     def __init__(self, eps=1e-6):
-        super(ap_loss, self).__init__()
+        super(AlphaLoss, self).__init__()
         self.eps = eps
 
     def forward(self, p_mask, gt_mask, trimap):
-        return alpha_pred_loss_weighted(p_mask, gt_mask, trimap, self.eps)
+        return alpha_loss_u(p_mask, gt_mask, trimap, self.eps)
+    
+class AlphaCompLoss(_Loss):
+    def __init__(self, eps=1e-6):
+        super(AlphaCompLoss, self).__init__()
+        self.eps = eps
+        
+    def forward(self, p_mask, gt_mask, fg, bg):
+        return alpha_loss(p_mask, gt_mask, self.eps) + \
+               comp_loss(p_mask, gt_mask, fg, bg, self.eps)
+    
+class AlphaCompLoss_u(_Loss):
+    def __init__(self, eps=1e-6):
+        super(AlphaCompLoss_u, self).__init__()
+        self.eps = eps
+        
+    def forward(self, p_mask, gt_mask, fg, bg, trimap):
+        return alpha_loss_u(p_mask, gt_mask, trimap, self.eps) + \
+               comp_loss_u(p_mask, gt_mask, fg, bg, trimap, self.eps)
 
-def compositional_loss(p_mask, gt_mask, fg, bg, eps=1e-6):
+def alpha_loss(p_mask, gt_mask, eps=1e-6):
+    return torch.sqrt(gt_mask.sub(p_mask).pow(2).mean() + eps)
+
+def alpha_loss_u(p_mask, gt_mask, trimap, eps=1e-6):
+    # only counts loss in "unknown" region of trimap
+    sqr_diff = gt_mask.sub(p_mask).pow(2)
+    unknown = torch.eq(trimap, torch.FloatTensor(np.ones(gt_mask.shape)*(128./255)).to(device)).float()
+    return torch.sqrt(torch.mul(sqr_diff, unknown).mean() + eps)
+
+def comp_loss(p_mask, gt_mask, fg, bg, eps=1e-6):
     gt_comp = composite(fg, bg, gt_mask)
     p_comp = composite(fg, bg, p_mask)
     return torch.sqrt(gt_comp.sub(p_comp).pow(2).sum() + eps)
 
-def compositional_loss_weighted(p_mask, gt_mask, fg, bg, trimap, eps=1e-6):
+def comp_loss_u(p_mask, gt_mask, fg, bg, trimap, eps=1e-6):
+    # only counts loss in "unknown" region of trimap
     gt_comp = composite(fg, bg, gt_mask)
     p_comp = composite(fg, bg, p_mask)
     bs, h, w = trimap.shape
@@ -208,26 +228,6 @@ def compositional_loss_weighted(p_mask, gt_mask, fg, bg, trimap, eps=1e-6):
     unknown = torch.eq(trimap, ones).float().expand(3, bs, h, w).contiguous().view(bs,3,h,w)
     s_diff = gt_comp.sub(p_comp).pow(2)
     return torch.sqrt(torch.mul(s_diff, unknown).sum() + eps)
-    
-class dim_loss(_Loss):
-    def __init__(self, eps=1e-6, w=0.5):
-        super(dim_loss, self).__init__()
-        self.eps = eps
-        self.w = w
-        
-    def forward(self, p_mask, gt_mask, fg, bg):
-        return self.w * alpha_pred_loss(p_mask, gt_mask, self.eps) + \
-               (1-self.w) * compositional_loss(p_mask, gt_mask, fg, bg, self.eps)
-    
-class dim_loss_weighted(_Loss):
-    def __init__(self, eps=1e-6, w=0.5):
-        super(dim_loss_weighted, self).__init__()
-        self.eps = eps
-        self.w = w
-        
-    def forward(self, p_mask, gt_mask, fg, bg, trimap):
-        return self.w * alpha_pred_loss_weighted(p_mask, gt_mask, trimap, self.eps) + \
-               (1-self.w) * compositional_loss_weighted(p_mask, gt_mask, fg, bg, trimap, self.eps)
 
 if __name__ == "__main__":
     main()
