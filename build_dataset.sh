@@ -19,12 +19,13 @@ cp Combined_Dataset/Training_set/Other/fg/* data/processed/train/fg
 cp Combined_Dataset/Training_set/Other/alpha/* data/processed/train/mattes
 
 rm -r Combined_Dataset
-gsutil -m rsync gs://source deactivateimages.cocodataset.org/train2014 data/processed/train/bg
 
-file="src/utils/coco_source deactivateremoved_ims_2d.txt"
-while FS= read linesource deactivate
-dosource deactivate
-	rm "data/processesource deactivated/train/bg/$line"
+gsutil -m rsync gs://images.cocodataset.org/train2014 data/processed/train/bg
+
+file="src/utils/coco_removed_ims_2d.txt"
+while FS= read line
+do
+	rm "data/processed/train/bg/$line"
 done <"$file"
 
 python src/utils/trainval_split.py
