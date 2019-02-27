@@ -78,9 +78,10 @@ def main():
     # _ed suffix refers to encoder-decoder part of the model, 
     # _r suffix refers to refinement part
     crit_ed = AlphaCompLoss_u()
-    crit_r = AlphaLoss_u()
     optim_ed = optim.Adam(encdec.parameters(), lr=1e-5)
-    optim_r = optim.Adam(refinement.parameters(), lr=1e-5)
+    if(args.stage != 0):
+        crit_r = AlphaLoss_u()
+        optim_r = optim.Adam(refinement.parameters(), lr=1e-5)
 
     # TRAIN
 
@@ -300,7 +301,7 @@ def sum_absolute_differences(p_mask, gt_mask, trimap):
     unknown = torch.eq(trimap, ones).float().expand(3, bs, h, w).contiguous().view(bs,3,h,w)
     diffs = gt_mask.sub(p_mask).abs()
     u_diffs = torch.mul(diffs, unknown)
-    return u_diffs.sum()
+    return u_diffs.sum() / bs
 
 def mean_squared_error(p_mask, gt_mask, trimap):
     bs, h, w = trimap.shape
