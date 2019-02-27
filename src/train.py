@@ -130,7 +130,8 @@ def main():
 
                 # zero the gradients
                 optim_ed.zero_grad()
-                optim_r.zero_grad()
+                if(args.stage != 0):
+                    optim_r.zero_grad()
                 
                 # Calculate loss
                 with torch.set_grad_enabled(phase == 'train'): # Only track grads if in train mode
