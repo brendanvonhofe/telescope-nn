@@ -8,6 +8,6 @@ python src/train.py \
     --stage=2 \
     --save_dir=models/feb2219 \
     --epochs=20 \
-    --checkpoint=models/feb222019
+    --checkpoint=vgg16
 
 conda deactivate

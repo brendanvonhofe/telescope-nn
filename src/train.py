@@ -15,6 +15,7 @@ from tensorboardX import SummaryWriter
 
 from dataset import getTransforms, MatteDataset
 from architecture.linknet import LinkNet34
+from architecture.vgg16 import DeepMattingVGG
 from architecture.refinement_layer import MatteRefinementLayer
 
 PATH = Path('data/processed/train/')
@@ -55,7 +56,8 @@ def main():
 
     # Setup Model
     epoch = 0
-    encdec = LinkNet34(1)
+    # encdec = LinkNet34(1)
+    encdec = DeepMattingVGG()
     if(args.checkpoint != 'vgg16'):
         save_name = os.listdir(args.checkpoint + '/encdec/')[0]
         print("Loading encoder-decoder:", save_name)
