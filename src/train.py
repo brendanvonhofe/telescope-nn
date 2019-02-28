@@ -37,6 +37,7 @@ def get_args():
     parser.add_argument('--save_dir', type=str, required=True, help='dst to save checkpoint')
     parser.add_argument('--epochs', type=int, default=-1, help='number of epochs to train for, -1 -> train current stage')
     parser.add_argument('--checkpoint', type=str, default='vgg16', help='directory to load checkpoints from')
+    parser.add_argument('--weighted_loss', type=int, default=0, help='flag to only track loss in unknown region of trimap')
     args = parser.parse_args()
     print(args)
     return args
@@ -58,7 +59,7 @@ def main():
     epoch = 0
     # encdec = LinkNet34(1)
     encdec = DeepMattingVGG()
-    if(args.checkpoint != 'vgg16'):
+    if(args.checkpoint != 'fresh'):
         save_name = os.listdir(args.checkpoint + '/encdec/')[0]
         print("Loading encoder-decoder:", save_name)
         ckpt = torch.load(args.checkpoint + '/encdec/' + save_name)
@@ -74,13 +75,21 @@ def main():
             refinement.load_state_dict(ckpt['state_dict'])
             # refinement.load_state_dict(ckpt)
             refinement = refinement.to(device)
+    else:
+        encdec.to(device)
 
     # _ed suffix refers to encoder-decoder part of the model, 
     # _r suffix refers to refinement part
-    crit_ed = AlphaCompLoss_u()
+    if(args.weighted_loss):
+        crit_ed = AlphaCompLoss_u()
+    else:
+        crit_ed = AlphaCompLoss()
     optim_ed = optim.Adam(encdec.parameters(), lr=1e-5)
     if(args.stage != 0):
-        crit_r = AlphaLoss_u()
+        if(args.weighted_loss):
+            crit_r = AlphaLoss_u()
+        else:
+            crit_r = AlphaLoss()
         optim_r = optim.Adam(refinement.parameters(), lr=1e-5)
 
     # TRAIN
@@ -144,10 +153,16 @@ def main():
                     # _, preds = torch.max(outputs, 1)
 
                     if(args.stage != 1):
-                        loss_ed = crit_ed(outputs_ed, labels, fg, bg, trimap)
+                        if(args.weighted_loss):
+                            loss_ed = crit_ed(outputs_ed, labels, fg, bg, trimap)
+                        else:
+                            loss_ed = crit_ed(outputs_ed, labels, fg, bg)
                         running_loss_ed.append(loss_ed.item())
                     if(args.stage != 0):
-                        loss_r = crit_r(outputs_r, labels, trimap)
+                        if(args.weighted_loss):
+                            loss_r = crit_r(outputs_r, labels, trimap)
+                        else:
+                            loss_r = crit_r(outputs_r, labels)
                         running_loss_r.append(loss_r.item())
 
                     # backward + optimize only if in training phase
@@ -158,36 +173,46 @@ def main():
                         if(args.stage == 1):
                             loss_r.backward()
                             optim_r.step()
-                        if(args.stage != 2):
+                        if(args.stage == 2):
                             loss_r.backward()
                             optim_ed.step()
                             optim_r.step()
 
                     if(phase == 'val'):
                         if(args.stage == 0):
-                            running_sad.append(sum_absolute_differences(outputs_ed, labels, trimap).item())
-                            running_mse.append(mean_squared_error(outputs_ed, labels, trimap).item())
+                            if(args.weighted_loss):
+                                running_sad.append(sum_absolute_differences_u(outputs_ed, labels, trimap).item())
+                                running_mse.append(mean_squared_error_u(outputs_ed, labels, trimap).item())
+                            else:
+                                running_sad.append(sum_absolute_differences(outputs_ed, labels).item())
+                                running_mse.append(mean_squared_error(outputs_ed, labels).item())
                         else:
-                            running_sad.append(sum_absolute_differences(outputs_r, labels, trimap).item())
-                            running_mse.append(mean_squared_error(outputs_r, labels, trimap).item())
+                            if(args.weighted_loss):
+                                running_sad.append(sum_absolute_differences_u(outputs_r, labels, trimap).item())
+                                running_mse.append(mean_squared_error_u(outputs_r, labels, trimap).item())
+                            else:
+                                running_sad.append(sum_absolute_differences(outputs_r, labels).item())
+                                running_mse.append(mean_squared_error(outputs_r, labels).item())
 
 
             # Record average epoch loss for TensorBoard
-            epoch_loss_ed = np.array(running_loss_ed).mean()
-            epoch_loss_r = np.array(running_loss_r).mean()
+            if(args.stage != 1):
+                epoch_loss_ed = np.array(running_loss_ed).mean()
+            if(args.stage != 0):
+                epoch_loss_r = np.array(running_loss_r).mean()
             if(phase == 'train'):
                 if(args.stage != 1):
-                    train_writer.add_scalar("Encoder-Decoder_Loss", epoch_loss_ed, epoch + e)
+                    train_writer.add_scalar("Encoder-Decoder Loss", epoch_loss_ed, epoch + e)
                 if(args.stage != 0):
-                    train_writer.add_scalar("Refinement_Loss", epoch_loss_r, epoch + e)
+                    train_writer.add_scalar("Refinement Loss", epoch_loss_r, epoch + e)
                 
             if(phase == 'val'):
-                val_writer.add_scalar("Mean-Squared-Error", np.array(running_mse).mean(), epoch+e)
-                val_writer.add_scalar("Sum-of-Absolute-Differences", np.array(running_sad).mean(), epoch+e)
+                val_writer.add_scalar("Mean Squared Error", np.array(running_mse).mean(), epoch+e)
+                val_writer.add_scalar("Sum of Absolute Differences", np.array(running_sad).mean(), epoch+e)
                 if(args.stage != 1):
-                    val_writer.add_scalar("Encoder-Decoder_Loss", epoch_loss_ed, epoch+e)
+                    val_writer.add_scalar("Encoder-Decoder Loss", epoch_loss_ed, epoch+e)
                 if(args.stage != 0):
-                    val_writer.add_scalar("Refinement_Loss", epoch_loss_r, epoch+e)
+                    val_writer.add_scalar("Refinement Loss", epoch_loss_r, epoch+e)
 
             # deep copy the best model
             # if(phase == 'val' and epoch_loss < best_loss):
@@ -245,15 +270,23 @@ class AlphaLoss_u(_Loss):
 
     def forward(self, p_mask, gt_mask, trimap):
         return alpha_loss_u(p_mask, gt_mask, trimap, self.eps)
+
+class AlphaLoss(_Loss):
+    def __init__(self, eps=1e-6):
+        super(AlphaLoss, self).__init__()
+        self.eps = eps
+
+    def forward(self, p_mask, gt_mask):
+        return alpha_loss(p_mask, gt_mask, self.eps)
     
-# class AlphaCompLoss(_Loss):
-#     def __init__(self, eps=1e-6):
-#         super(AlphaCompLoss, self).__init__()
-#         self.eps = eps
+class AlphaCompLoss(_Loss):
+    def __init__(self, eps=1e-6):
+        super(AlphaCompLoss, self).__init__()
+        self.eps = eps
         
-#     def forward(self, p_mask, gt_mask, fg, bg):
-#         return alpha_loss(p_mask, gt_mask, self.eps) + \
-#                comp_loss(p_mask, gt_mask, fg, bg, self.eps)
+    def forward(self, p_mask, gt_mask, fg, bg):
+        return alpha_loss(p_mask, gt_mask, self.eps) + \
+               comp_loss(p_mask, gt_mask, fg, bg, self.eps)
     
 class AlphaCompLoss_u(_Loss):
     def __init__(self, eps=1e-6):
@@ -264,12 +297,14 @@ class AlphaCompLoss_u(_Loss):
         return (0.5 * alpha_loss_u(p_mask, gt_mask, trimap, self.eps)) + \
                (0.5 * comp_loss_u(p_mask, gt_mask, fg, bg, trimap, self.eps))
 
-# def alpha_loss(p_mask, gt_mask, eps=1e-6):
-#     return torch.sqrt(gt_mask.sub(p_mask).pow(2).mean() + eps)
+def alpha_loss(p_mask, gt_mask, eps=1e-6):
+    sqr_diff = gt_mask.sub(p_mask).pow(2)
+    image_loss = torch.sum(torch.sum(torch.sum(sqr_diff, dim=1), dim=1), dim=1)
+    alpha_loss = torch.sqrt(image_loss.mean() + eps)
+    return alpha_loss
 
 def alpha_loss_u(p_mask, gt_mask, trimap, eps=1e-6):
     # only counts loss in "unknown" region of trimap
-
     sqr_diff = gt_mask.sub(p_mask).pow(2)
     unknown = torch.eq(trimap, torch.FloatTensor(np.ones(gt_mask.shape)*(128./255)).to(device)).float()
     loss = torch.mul(sqr_diff, unknown)
@@ -277,10 +312,13 @@ def alpha_loss_u(p_mask, gt_mask, trimap, eps=1e-6):
     alpha_loss = torch.sqrt(image_loss.mean() + eps)
     return alpha_loss
 
-# def comp_loss(p_mask, gt_mask, fg, bg, eps=1e-6):
-#     gt_comp = composite(fg, bg, gt_mask)
-#     p_comp = composite(fg, bg, p_mask)
-#     return torch.sqrt(gt_comp.sub(p_comp).pow(2).sum() + eps)
+def comp_loss(p_mask, gt_mask, fg, bg, eps=1e-6):
+    gt_comp = composite(fg, bg, gt_mask) * (1./255)
+    p_comp = composite(fg, bg, p_mask) * (1./255)
+    s_diff = gt_comp.sub(p_comp).pow(2)
+    image_loss = torch.sum(torch.sum(torch.sum(s_diff, dim=1), dim=1), dim=1)
+    comp_loss = torch.sqrt(image_loss.mean() + eps)
+    return comp_loss
 
 def comp_loss_u(p_mask, gt_mask, fg, bg, trimap, eps=1e-6):
     # only counts loss in "unknown" region of trimap
@@ -296,7 +334,12 @@ def comp_loss_u(p_mask, gt_mask, fg, bg, trimap, eps=1e-6):
     comp_loss = torch.sqrt(image_loss.mean() + eps)
     return comp_loss
 
-def sum_absolute_differences(p_mask, gt_mask, trimap):
+def sum_absolute_differences(p_mask, gt_mask):
+    bs, _, _, _ = p_mask.shape
+    diffs = gt_mask.sub(p_mask).abs()
+    return diffs.sum() / bs
+
+def sum_absolute_differences_u(p_mask, gt_mask, trimap):
     bs, h, w = trimap.shape
     ones = torch.FloatTensor(np.ones(trimap.shape)*(128./255)).to(device)
     unknown = torch.eq(trimap, ones).float().expand(3, bs, h, w).contiguous().view(bs,3,h,w)
@@ -304,7 +347,11 @@ def sum_absolute_differences(p_mask, gt_mask, trimap):
     u_diffs = torch.mul(diffs, unknown)
     return u_diffs.sum() / bs
 
-def mean_squared_error(p_mask, gt_mask, trimap):
+def mean_squared_error(p_mask, gt_mask):
+    diffs = gt_mask.sub(p_mask).pow(2)
+    return diffs.mean()
+
+def mean_squared_error_u(p_mask, gt_mask, trimap):
     bs, h, w = trimap.shape
     ones = torch.FloatTensor(np.ones(trimap.shape)*(128./255)).to(device)
     unknown = torch.eq(trimap, ones).float().expand(3, bs, h, w).contiguous().view(bs,3,h,w)

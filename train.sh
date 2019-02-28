@@ -5,9 +5,10 @@ source /home/bread/anaconda3/bin/activate telescope
 python src/train.py \
     --batch_size=16 \
     --threads=8 \
-    --stage=2 \
-    --save_dir=models/feb2219 \
+    --stage=0 \
+    --save_dir=models/testing \
     --epochs=20 \
-    --checkpoint=vgg16
+    --checkpoint=fresh \
+    --weighted_loss=0
 
 conda deactivate

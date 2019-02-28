@@ -41,13 +41,12 @@ class DeepMattingVGG(nn.Module):
         # (29): ReLU(inplace)
         # (30): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
 
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False, return_indices=True)
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False, return_indices=True)
-        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False, return_indices=True)
-        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False, return_indices=True)
-        self.pool5 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False, return_indices=True)
+        # Add fourth channel to initial conv for trimap
+        pretrained_weights = self.vgg[0].weight
+        self.conv1 = nn.Conv2d(4, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv1.weight.data.normal_(0, 0.001)
+        self.conv1.weight.data[:, :3, :, :] = pretrained_weights
 
-        self.conv1 = self.vgg[0]
         self.conv2 = self.vgg[2]
         self.conv3 = self.vgg[5]
         self.conv4 = self.vgg[7]
@@ -60,6 +59,12 @@ class DeepMattingVGG(nn.Module):
         self.conv11 = self.vgg[24]
         self.conv12 = self.vgg[26]
         self.conv13 = self.vgg[28]
+
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False, return_indices=True)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False, return_indices=True)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False, return_indices=True)
+        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False, return_indices=True)
+        self.pool5 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False, return_indices=True)
 
         self.conv14 = nn.Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
 
