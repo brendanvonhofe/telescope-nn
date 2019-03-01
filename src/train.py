@@ -57,26 +57,31 @@ def main():
 
     # Setup Model
     epoch = 0
+    best_loss = 50000
+    early_stopping = 100
     # encdec = LinkNet34(1)
     encdec = DeepMattingVGG()
     if(args.checkpoint != 'fresh'):
-        save_name = os.listdir(args.checkpoint + '/encdec/')[0]
+        save_name = os.listdir('models/' + args.checkpoint + '/encdec/')[np.argmax(np.array([int(s[-8:-4]) for s in os.listdir('models/' + args.checkpoint + '/encdec/')]))]
         print("Loading encoder-decoder:", save_name)
-        ckpt = torch.load(args.checkpoint + '/encdec/' + save_name)
+        ckpt = torch.load('models/' + args.checkpoint + '/encdec/' + save_name)
         epoch = ckpt['epoch']
+        best_loss = ckpt['loss']
         encdec.load_state_dict(ckpt['state_dict'])
         # encdec.load_state_dict(ckpt)
-        encdec = encdec.to(device)
+        
         if(args.stage != 0):
-            save_name = os.listdir(args.checkpoint + '/refinement/')[0]
-            print("Loading refinement:", save_name)
             refinement = MatteRefinementLayer()
-            ckpt = torch.load(args.checkpoint + '/refinement/' + save_name)
-            refinement.load_state_dict(ckpt['state_dict'])
-            # refinement.load_state_dict(ckpt)
+            if(os.listdir('models/' + args.checkpoint + '/refinement/')):
+                save_name = os.listdir('models/' + args.checkpoint + '/refinement/')[np.argmax(np.array([int(s[-8:-4]) for s in os.listdir('models/' + args.checkpoint + '/refinement/')]))]
+                print("Loading refinement:", save_name)
+                ckpt = torch.load('models/' + args.checkpoint + '/refinement/' + save_name)
+                refinement.load_state_dict(ckpt['state_dict'])
+                if(args.stage == 1):
+                    best_loss = ckpt['loss']
+                # refinement.load_state_dict(ckpt)
             refinement = refinement.to(device)
-    else:
-        encdec.to(device)
+    encdec = encdec.to(device)
 
     # _ed suffix refers to encoder-decoder part of the model, 
     # _r suffix refers to refinement part
@@ -97,12 +102,10 @@ def main():
     # Writers for TensorBoard
     train_writer = SummaryWriter('logs/train' + args.save_dir)
     val_writer = SummaryWriter('logs/val' + args.save_dir)
-
-    # best_model_wts_ed = copy.deepcopy(encdec.state_dict())
-    # best_model_wts_r = copy.deepcopy(refinement.state_dict())
-    # best_loss = 50000 # CHECK THIS
     
     for e in tqdm(range(args.epochs)):
+        if(not early_stopping):
+            break
         # Each epoch has a training and validation phase
         for phase in ['train', 'val']:
             if phase == 'train':
@@ -174,7 +177,7 @@ def main():
                             loss_r.backward()
                             optim_r.step()
                         if(args.stage == 2):
-                            loss_r.backward()
+                            loss_ed.backward()
                             optim_ed.step()
                             optim_r.step()
 
@@ -207,53 +210,55 @@ def main():
                     train_writer.add_scalar("Refinement Loss", epoch_loss_r, epoch + e)
                 
             if(phase == 'val'):
+                early_stopping -= 1
                 val_writer.add_scalar("Mean Squared Error", np.array(running_mse).mean(), epoch+e)
                 val_writer.add_scalar("Sum of Absolute Differences", np.array(running_sad).mean(), epoch+e)
                 if(args.stage != 1):
+                    if(epoch_loss_ed < best_loss):
+                        early_stopping = 100
+                        best_loss = epoch_loss_ed
+                        tqdm.write("Saving model at {}".format(args.save_dir))
+                        checkpoint(epoch+e, args.save_dir, encdec, best_loss, encdec=True)
+                        if(args.stage != 0):
+                            checkpoint(epoch+e, args.save_dir, refinement, best_loss, encdec=False)
                     val_writer.add_scalar("Encoder-Decoder Loss", epoch_loss_ed, epoch+e)
                 if(args.stage != 0):
+                    if(args.stage == 1 and epoch_loss_r < best_loss):
+                        early_stopping = 100
+                        best_loss = epoch_loss_r
+                        tqdm.write("Saving refinement layer at {}".format(args.save_dir))
+                        checkpoint(epoch+e, args.save_dir, refinement, best_loss, encdec=False)
                     val_writer.add_scalar("Refinement Loss", epoch_loss_r, epoch+e)
-
-            # deep copy the best model
-            # if(phase == 'val' and epoch_loss < best_loss):
-            #     best_loss = epoch_loss
-            #     best_model_wts = copy.deepcopy(model.state_dict())
-            #     best_model_wts_r = copy.deepcopy(model_r.state_dict())
-
-    # print('Best val Loss: {:4f}'.format(best_loss))
 
     train_writer.close()
     val_writer.close()
 
-    print("Saving model at {}".format(args.save_dir))
-    checkpoint(args.epochs+epoch-1, args.save_dir, encdec, encdec=True)
-    if(args.stage != 0):
-        checkpoint(args.epochs+epoch-1, args.save_dir, refinement, encdec=False)
+    # print("Saving model at {}".format(args.save_dir))
+    # checkpoint(args.epochs+epoch-1, args.save_dir, encdec, best_loss_ed, encdec=True)
+    # if(args.stage != 0):
+    #     checkpoint(args.epochs+epoch-1, args.save_dir, refinement, best_loss_r, encdec=False)
 
-    # load best model weights
-    # model.load_state_dict(best_model_wts)
-    # model_r.load_state_dict(best_model_wts_r)
-    # torch.save(telescope.state_dict(), MODELS/savename)
 
 def composite(fg, bg, alpha):
     foreground = torch.mul(alpha, fg)
     background = torch.mul(1.0 - alpha, bg)
     return torch.add(foreground, background)
 
-def checkpoint(epoch, save_dir, model, encdec=True):
+def checkpoint(epoch, save_dir, model, loss, encdec=True):
     if(encdec):
-        model_out_path = "{}/encdec/ckpt_encdec_e{}.pth".format(save_dir, epoch)
+        model_out_path = "{}/encdec/ckpt_encdec_e{:04d}.pth".format(save_dir, epoch)
     else:
-        model_out_path = "{}/refinement/ckpt_refinement_e{}.pth".format(save_dir, epoch)
+        model_out_path = "{}/refinement/ckpt_refinement_e{:04d}.pth".format(save_dir, epoch)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
         os.makedirs(save_dir + '/encdec')
         os.makedirs(save_dir + '/refinement')
     torch.save({
-        'epoch': epoch + 1,
+        'epoch': epoch,
         'state_dict': model.state_dict(),
+        'loss': loss
     }, model_out_path )
-    print("Checkpoint saved to {}".format(model_out_path))
+    print("Checkpoint saved to {} with loss {}".format(model_out_path, loss))
 
 class _Loss(nn.Module):
     def __init__(self, size_average=None, reduce=None, reduction='mean'):
