@@ -13,6 +13,7 @@ from dataset import getTransforms, MatteDataset
 from architecture.linknet import LinkNet34
 from architecture.vgg16 import DeepMattingVGG
 from architecture.refinement_layer import MatteRefinementLayer
+from utils.cyclic_lr import CyclicLR
 
 PATH = Path('data/processed/train/')
 VAL = Path('data/processed/val/')
@@ -87,12 +88,14 @@ def main():
     else:
         crit_ed = AlphaCompLoss()
     optim_ed = optim.Adam(encdec.parameters(), lr=1e-5)
+    sched_ed = CyclicLR(optim_ed, 5e-6, 5e-5, 200)
     if(args.stage != 0):
         if(args.weighted_loss):
             crit_r = AlphaLoss_u()
         else:
             crit_r = AlphaLoss()
         optim_r = optim.Adam(refinement.parameters(), lr=1e-5)
+        sched_r = CyclicLR(optim_r, 5e-6, 5e-5, 200)
 
     # TRAIN
 
@@ -104,7 +107,7 @@ def main():
         num_epochs = 1000
     else:
         num_epochs = args.epochs
-    for e in tqdm(range(num_epochs)):
+    for e in tqdm(range(num_epochs)):        
         if(not early_stopping):
             break
         # Each epoch has a training and validation phase
@@ -174,13 +177,17 @@ def main():
                         if(args.stage == 0):
                             loss_ed.backward()
                             optim_ed.step()
+                            sched_ed.batch_step()
                         if(args.stage == 1):
                             loss_r.backward()
                             optim_r.step()
+                            sched_r.batch_step()
                         if(args.stage == 2):
                             loss_ed.backward()
                             optim_ed.step()
                             optim_r.step()
+                            sched_ed.batch_step()
+                            sched_r.batch_step()
 
                     if(phase == 'val'):
                         if(args.stage == 0):
