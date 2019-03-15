@@ -1,10 +1,6 @@
 from pathlib import Path
-import json # For config file
-import time
-import copy
 import os
 import argparse
-from datetime import datetime
 from tqdm import tqdm
 import numpy as np
 import torch
@@ -39,6 +35,7 @@ def get_args():
     parser.add_argument('--epochs', type=int, default=-1, help='number of epochs to train for, -1 -> train current stage')
     parser.add_argument('--checkpoint', type=str, default='vgg16', help='directory to load checkpoints from')
     parser.add_argument('--weighted_loss', type=int, default=0, help='flag to only track loss in unknown region of trimap')
+    parser.add_argument('--early_cutoff', type=int, default=100, help='number of epochs to train without increase to val loss before early-stopping')
     args = parser.parse_args()
     print(args)
     return args
@@ -54,12 +51,12 @@ def main():
     dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=args.batch_size,
                                                 shuffle=True, num_workers=args.threads)
                 for x in ['train', 'val']}
-    dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
+    # dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
 
     # Setup Model
     epoch = 0
     best_loss = 50000
-    early_stopping = 100
+    early_stopping = args.early_cutoff
     # encdec = LinkNet34(1)
     encdec = DeepMattingVGG()
     if(args.checkpoint != 'fresh'):
@@ -98,7 +95,7 @@ def main():
         else:
             crit_r = AlphaLoss()
         optim_r = optim.Adam(refinement.parameters(), lr=1e-5)
-        sched_ed = CyclicLR(optim_r, 5e-6, 5e-5, 200)
+        sched_r = CyclicLR(optim_r, 5e-6, 5e-5, 200)
 
     # TRAIN
 
@@ -106,7 +103,11 @@ def main():
     train_writer = SummaryWriter('logs/train' + args.save_dir)
     val_writer = SummaryWriter('logs/val' + args.save_dir)
     
-    for e in tqdm(range(args.epochs)):
+    if(args.epochs == -1):
+        num_epochs = 1000
+    else:
+        num_epochs = args.epochs
+    for e in tqdm(range(num_epochs)):        
         if(not early_stopping):
             break
         # Each epoch has a training and validation phase
@@ -136,11 +137,11 @@ def main():
             # Iterate over dataset.
             for i, sample in tqdm(enumerate(dataloaders[phase])):
                 # Get inputs and labels, put them on GPU
-                inputs_ed, labels, fg, bg = sample['im_map'], sample['mask'], sample['fg'], sample['bg']
-                inputs_ed = inputs_ed.to(device)
-                labels = labels.to(device)
-                fg = fg.to(device)
-                bg = bg.to(device)
+                inputs_ed, labels, fg, bg = sample['im_map'].to(device), sample['mask'].to(device), sample['fg'].to(device), sample['bg'].to(device)
+                # inputs_ed = inputs_ed.to(device)
+                # labels = labels.to(device)
+                # fg = fg.to(device)
+                # bg = bg.to(device)
                 trimap = inputs_ed[:,3,:,:]
 
                 # zero the gradients
@@ -222,18 +223,18 @@ def main():
                 val_writer.add_scalar("Sum of Absolute Differences", np.array(running_sad).mean(), epoch+e)
                 if(args.stage != 1):
                     if(epoch_loss_ed < best_loss):
-                        early_stopping = 100
+                        early_stopping = args.early_cutoff
                         best_loss = epoch_loss_ed
-                        tqdm.write("Saving model at {}".format(args.save_dir))
+                        # tqdm.write("Saving model at {}".format(args.save_dir))
                         checkpoint(epoch+e, args.save_dir, encdec, best_loss, encdec=True)
                         if(args.stage != 0):
                             checkpoint(epoch+e, args.save_dir, refinement, best_loss, encdec=False)
                     val_writer.add_scalar("Encoder-Decoder Loss", epoch_loss_ed, epoch+e)
                 if(args.stage != 0):
                     if(args.stage == 1 and epoch_loss_r < best_loss):
-                        early_stopping = 100
+                        early_stopping = args.early_cutoff
                         best_loss = epoch_loss_r
-                        tqdm.write("Saving refinement layer at {}".format(args.save_dir))
+                        # tqdm.write("Saving refinement layer at {}".format(args.save_dir))
                         checkpoint(epoch+e, args.save_dir, refinement, best_loss, encdec=False)
                     val_writer.add_scalar("Refinement Loss", epoch_loss_r, epoch+e)
 
@@ -265,7 +266,7 @@ def checkpoint(epoch, save_dir, model, loss, encdec=True):
         'state_dict': model.state_dict(),
         'loss': loss
     }, model_out_path )
-    print("Checkpoint saved to {} with loss {}".format(model_out_path, loss))
+    tqdm.write("Checkpoint saved to {} with loss {}".format(model_out_path, loss))
 
 class _Loss(nn.Module):
     def __init__(self, size_average=None, reduce=None, reduction='mean'):
