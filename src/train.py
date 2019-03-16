@@ -236,6 +236,7 @@ def main():
                         best_loss = epoch_loss_r
                         # tqdm.write("Saving refinement layer at {}".format(args.save_dir))
                         checkpoint(epoch+e, args.save_dir, refinement, best_loss, encdec=False)
+                        checkpoint(epoch+e, args.save_dir, refinement, best_loss, encdec=True)
                     val_writer.add_scalar("Refinement Loss", epoch_loss_r, epoch+e)
 
     train_writer.close()
