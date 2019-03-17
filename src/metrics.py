@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 def composite(fg, bg, alpha):
     foreground = torch.mul(alpha, fg)
     background = torch.mul(1.0 - alpha, bg)
