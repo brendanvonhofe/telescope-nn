@@ -95,12 +95,13 @@ def sum_absolute_differences(p_mask, gt_mask):
 
 def sum_absolute_differences_u(p_mask, gt_mask, trimap):
     bs, h, w = trimap.shape
-    print(np.unique(trimap.cpu().numpy()))
-    ones = torch.FloatTensor(np.ones(trimap.shape)*(128./255)).to(device)
-    unknown = torch.eq(trimap, ones).float().expand(3, bs, h, w).contiguous().view(bs,3,h,w)
+    ones = torch.eq(trimap, 128./255).to(device)
+    n_pix = torch.sum(ones)
     diffs = gt_mask.sub(p_mask).abs()
-    u_diffs = torch.mul(diffs, unknown)
-    return u_diffs.sum() / bs
+    u_diffs = torch.mul(diffs, ones)
+    sad = u_diffs.sum() / (n_pix / 1000)
+    print("SAD ", sad)
+    return sad
 
 def mean_squared_error(p_mask, gt_mask):
     diffs = gt_mask.sub(p_mask).pow(2)
