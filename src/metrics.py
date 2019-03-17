@@ -93,6 +93,7 @@ def sum_absolute_differences(p_mask, gt_mask):
 
 def sum_absolute_differences_u(p_mask, gt_mask, trimap):
     bs, h, w = trimap.shape
+    print(np.unique(trimap.numpy()))
     ones = torch.FloatTensor(np.ones(trimap.shape)*(128./255)).to(device)
     unknown = torch.eq(trimap, ones).float().expand(3, bs, h, w).contiguous().view(bs,3,h,w)
     diffs = gt_mask.sub(p_mask).abs()

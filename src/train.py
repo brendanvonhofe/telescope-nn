@@ -234,11 +234,6 @@ def main():
     train_writer.close()
     val_writer.close()
 
-def composite(fg, bg, alpha):
-    foreground = torch.mul(alpha, fg)
-    background = torch.mul(1.0 - alpha, bg)
-    return torch.add(foreground, background)
-
 def checkpoint(epoch, save_dir, model, loss, encdec=True):
     if(encdec):
         model_out_path = "{}/encdec/ckpt_encdec_e{:04d}.pth".format(save_dir, epoch)
