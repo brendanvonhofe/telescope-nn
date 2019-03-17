@@ -99,7 +99,9 @@ def sum_absolute_differences_u(p_mask, gt_mask, trimap):
     n_pix = torch.sum(ones)
     diffs = gt_mask.sub(p_mask).abs()
     u_diffs = torch.mul(diffs, ones)
-    sad = u_diffs.sum() / (n_pix / 1000)
+    sad = u_diffs.sum()
+    print(u_diffs.shape, ones.shape, sad.shape)
+    sad = sad / (n_pix / 1000)
     print("SAD ", sad)
     return sad
 
