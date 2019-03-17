@@ -2,6 +2,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+def composite(fg, bg, alpha):
+    foreground = torch.mul(alpha, fg)
+    background = torch.mul(1.0 - alpha, bg)
+    return torch.add(foreground, background)
+
 class _Loss(nn.Module):
     def __init__(self, size_average=None, reduce=None, reduction='mean'):
         super(_Loss, self).__init__()
