@@ -67,8 +67,8 @@ def alpha_loss_u(p_mask, gt_mask, trimap, eps=1e-6):
     return alpha_loss
 
 def comp_loss(p_mask, gt_mask, fg, bg, eps=1e-6):
-    gt_comp = composite(fg, bg, gt_mask) * (1./255)
-    p_comp = composite(fg, bg, p_mask) * (1./255)
+    gt_comp = composite(fg, bg, gt_mask)
+    p_comp = composite(fg, bg, p_mask)
     s_diff = gt_comp.sub(p_comp).pow(2)
     image_loss = torch.sum(torch.sum(torch.sum(s_diff, dim=1), dim=1), dim=1)
     comp_loss = torch.sqrt(image_loss.mean() + eps)
@@ -77,8 +77,8 @@ def comp_loss(p_mask, gt_mask, fg, bg, eps=1e-6):
 def comp_loss_u(p_mask, gt_mask, fg, bg, trimap, eps=1e-6):
     # only counts loss in "unknown" region of trimap
 
-    gt_comp = composite(fg, bg, gt_mask) * (1./255)
-    p_comp = composite(fg, bg, p_mask) * (1./255)
+    gt_comp = composite(fg, bg, gt_mask)
+    p_comp = composite(fg, bg, p_mask)
     bs, h, w = trimap.shape
     ones = torch.FloatTensor(np.ones(trimap.shape)*(128./255)).to(device)
     unknown = torch.eq(trimap, ones).float().expand(3, bs, h, w).contiguous().view(bs,3,h,w)

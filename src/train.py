@@ -46,9 +46,9 @@ def main():
     args = get_args()
 
     # Load Dataset 
-    data_transform = getTransforms() # Consider adding additional transforms
-    image_datasets = {'train': MatteDataset(root_dir=PATH, transform=data_transform),
-                  'val': MatteDataset(root_dir=VAL, transform=data_transform)}
+    # data_transform = getTransforms() # Consider adding additional transforms
+    image_datasets = {'train': MatteDataset(root_dir=PATH),
+                  'val': MatteDataset(root_dir=VAL)}
     dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=args.batch_size,
                                                 shuffle=True, num_workers=args.threads)
                 for x in ['train', 'val']}
@@ -135,7 +135,7 @@ def main():
             # Iterate over dataset.
             for i, sample in tqdm(enumerate(dataloaders[phase])):
                 # Get inputs and labels, put them on GPU
-                inputs_ed, labels, fg, bg = sample['im_map'].to(device), sample['mask'].to(device), sample['fg'].to(device), sample['bg'].to(device)
+                inputs_ed, labels, fg, bg = sample['inputs'].to(device), sample['mask'].to(device), sample['fg'].to(device), sample['bg'].to(device)
                 trimap = inputs_ed[:,3,:,:]
 
                 # zero the gradients
