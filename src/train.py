@@ -9,7 +9,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from tensorboardX import SummaryWriter
 
-from dataset import getTransforms, MatteDataset
+from dataset import MatteDataset
 from architecture.linknet import LinkNet34
 from architecture.vgg16 import DeepMattingVGG
 from architecture.refinement_layer import MatteRefinementLayer
