@@ -86,7 +86,7 @@ def main():
     else:
         crit_ed = metrics.AlphaCompLoss()
     optim_ed = optim.Adam(encdec.parameters(), lr=1e-5)
-    sched_ed = CyclicLR(optim_ed, 5e-6, 5e-5, 200)
+    sched_ed = CyclicLR(optim_ed, 5e-6, 1e-4, 200)
     if(args.stage != 0):
         if(args.weighted_loss):
             crit_r = metrics.AlphaLoss_u()
@@ -228,7 +228,7 @@ def main():
                         early_stopping = args.early_cutoff
                         best_loss = epoch_loss_r
                         checkpoint(epoch+e, args.save_dir, refinement, best_loss, encdec=False)
-                        checkpoint(epoch+e, args.save_dir, refinement, best_loss, encdec=True)
+                        checkpoint(epoch+e, args.save_dir, encdec, best_loss, encdec=True)
                     val_writer.add_scalar("Refinement Loss", epoch_loss_r, epoch+e)
 
     train_writer.close()
