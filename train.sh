@@ -10,15 +10,15 @@
 #     --threads=8 \
 #     --weighted_loss=0
 
-python src/train.py \
-    --checkpoint=nudataset_0 \
-    --save_dir=models/nudataset_1 \
-    --stage=1 \
-    --early_cutoff=25 \
-    --epochs=-1 \
-    --batch_size=16 \
-    --threads=8 \
-    --weighted_loss=0 
+# python src/train.py \
+#     --checkpoint=nudataset_0 \
+#     --save_dir=models/nudataset_1 \
+#     --stage=1 \
+#     --early_cutoff=25 \
+#     --epochs=-1 \
+#     --batch_size=16 \
+#     --threads=8 \
+#     --weighted_loss=0 
 
 python src/train.py \
     --checkpoint=nudataset_1 \
