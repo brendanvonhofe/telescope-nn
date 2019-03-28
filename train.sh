@@ -31,14 +31,14 @@
 #     --weighted_loss=0 
 
 python src/train.py \
-    --checkpoint=nudataset_2 \
-    --save_dir=models/nudataset_3 \
+    --checkpoint=nudataset_1 \
+    --save_dir=models/nuds_weighted \
     --stage=2 \
     --early_cutoff=150 \
     --epochs=-1 \
     --batch_size=16 \
     --threads=8 \
-    --weighted_loss=0 
+    --weighted_loss=1
 
 # python src/train.py \
 #     --checkpoint=cyclic_2 \

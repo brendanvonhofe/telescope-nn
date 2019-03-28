@@ -213,7 +213,7 @@ def main():
                 
             if(phase == 'val'):
                 early_stopping -= 1
-                val_writer.add_scalar( "Mean Squared Error", np.array(running_mse).mean(), epoch+e)
+                val_writer.add_scalar("Mean Squared Error", np.array(running_mse).mean(), epoch+e)
                 val_writer.add_scalar("Sum of Absolute Differences", np.array(running_sad).mean(), epoch+e)
                 if(args.stage != 1):
                     if(epoch_loss_ed < best_loss):
@@ -222,14 +222,14 @@ def main():
                         checkpoint(epoch+e, args.save_dir, encdec, best_loss, encdec=True)
                         if(args.stage != 0):
                             checkpoint(epoch+e, args.save_dir, refinement, best_loss, encdec=False)
-                    val_writer.add_scalar("Encoder-Decoder Loss", epoch_loss_ed, epoch+e)
+                    val_writer.add_scalar("Encoder-Decoder Loss", epoch_loss_ed, epoch + e)
                 if(args.stage != 0):
                     if(args.stage == 1 and epoch_loss_r < best_loss):
                         early_stopping = args.early_cutoff
                         best_loss = epoch_loss_r
                         checkpoint(epoch+e, args.save_dir, refinement, best_loss, encdec=False)
                         checkpoint(epoch+e, args.save_dir, encdec, best_loss, encdec=True)
-                    val_writer.add_scalar("Refinement Loss", epoch_loss_r, epoch+e)
+                    val_writer.add_scalar("Refinement Loss", epoch_loss_r, epoch + e)
 
     train_writer.close()
     val_writer.close()
