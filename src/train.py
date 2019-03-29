@@ -102,7 +102,7 @@ def main():
     val_writer = SummaryWriter('logs/val' + args.save_dir)
     
     if(args.epochs == -1):
-        num_epochs = 1000
+        num_epochs = 10000
     else:
         num_epochs = args.epochs
     for e in tqdm(range(num_epochs)):        

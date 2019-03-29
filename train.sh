@@ -31,10 +31,10 @@
 #     --weighted_loss=0 
 
 python src/train.py \
-    --checkpoint=nudataset_1 \
-    --save_dir=models/nuds_weighted \
+    --checkpoint=nuds_weighted \
+    --save_dir=models/nuds_weighted2 \
     --stage=2 \
-    --early_cutoff=150 \
+    --early_cutoff=250 \
     --epochs=-1 \
     --batch_size=16 \
     --threads=8 \
