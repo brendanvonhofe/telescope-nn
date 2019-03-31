@@ -13,14 +13,14 @@ https://arxiv.org/pdf/1703.03872.pdf
 * Ubuntu
 
 ## Install
-Download model [here] (https://dl-web.dropbox.com/zip_batch_download?_download_id=13494990997037883518801636799336755144563405063540048563376241897&_notify_domain=www.dropbox.com&_subject_uid=1588323984&files=%2Fmodel&parent_path=%2Fmodel&w=AADV2XLvTf5fOiSRenCfqqCBI3JFHuPOHyKXnaybcB7GIg). Make sure "model" folder is in the main directory.
+Download model [here](https://dl-web.dropbox.com/zip_batch_download?_download_id=13494990997037883518801636799336755144563405063540048563376241897&_notify_domain=www.dropbox.com&_subject_uid=1588323984&files=%2Fmodel&parent_path=%2Fmodel&w=AADV2XLvTf5fOiSRenCfqqCBI3JFHuPOHyKXnaybcB7GIg). Make sure "model" folder is in the main directory.
 
 Create environment and install dependencies with
 ```
 conda env create -f env.yml
 conda activate telescope
 ```
-Play with the model by running the ```user_interface.ipynb``` notebook
+Play with the model by running the ```demo.ipynb``` notebook
 ```
 jupyter notebook
 ```
