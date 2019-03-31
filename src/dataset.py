@@ -99,5 +99,21 @@ class MatteDataset(Dataset):
         # SEND
         inputs = np.concatenate((image, trimap), axis=2)
         sample = self.__totensor__({'inputs': inputs, 'mask': mask, 'bg': bg, 'fg': fg})
+        sample['bg_fn'] = bg_fn
+
+        return sample
+
+class SampleDataset(Dataset):
+    def __init__(self):
+        self.dir = Path('../samples')
+        self.images = os.listdir(str(self.dir/'images'))
+        self.trimaps = os.listdir(str(self.dir/'trimaps'))
+        self.masks = os.listdir(str(self.dir/'masks'))
         
+    def __len__(self):
+        return len(self.images)
+    
+    def __getitem__(self, idx):
+        sample = {'image': self.dir/'images'/self.images[idx], 'trimap': self.dir/'trimaps'/self.trimaps[idx], 'mask': self.dir/'masks'/self.masks[idx]}
+
         return sample

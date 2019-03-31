@@ -1,7 +1,5 @@
 #!/bin/bash
 
-source /home/bread/anaconda3/bin/activate telescope
-
 mkdir data/processed
 mkdir data/processed/train
 mkdir data/processed/val
@@ -29,5 +27,3 @@ do
 done <"$file"
 
 python src/utils/trainval_split.py
-
-source /home/bread/anaconda3/bin/deactivate

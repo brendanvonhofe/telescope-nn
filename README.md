@@ -8,23 +8,22 @@ Xu, Ning, et al. “Deep Image Matting.” 2017 IEEE Conference on Computer Visi
 https://arxiv.org/pdf/1703.03872.pdf
 
 ## Requirements
-* Ubuntu 16.04
-* Nvidia GeForce GTX 1080 Ti or better
-* Cuda 9
 * Conda
 * Python 3
-
+* Ubuntu
 
 ## Install
-Place the ```Adobe_Deep_Matting_Dataset.zip``` in the ```data/raw``` directory.
-
-Need gsutil rsync to ```build_dataset.sh```. Run the following
-```
-curl https://sdk.cloud.google.com | bash
-```
 Create environment and install dependencies with
 ```
 conda env create -f env.yml
+conda activate telescope
 ```
-
-Run ```build_dataset.sh``` and then ```train.sh```.
+Play with the model by running the ```user_interface.ipynb``` notebook
+```
+jupyter notebook
+```
+Test the model with individual images/trimaps with ```telescope.py```.
+For example
+```
+python telescope.py samples/images/head.png samples/trimaps/head.png
+```
