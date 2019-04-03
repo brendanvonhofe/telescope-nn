@@ -25,10 +25,10 @@ def predict(image_fn, trimap_fn, home_dir, use_trimap=True):
 
     # Load main network and refinement network as well as their pretrained weights
     net = DeepMattingVGG()
-    net.load_state_dict(torch.load(ENCDEC)['state_dict'])
+    net.load_state_dict(torch.load(ENCDEC, map_location=device)['state_dict'])
     net = net.to(device)
     refine = MatteRefinementLayer()
-    refine.load_state_dict(torch.load(REFINE)['state_dict'])
+    refine.load_state_dict(torch.load(REFINE, map_location=device)['state_dict'])
     refine = refine.to(device)
 
 
