@@ -17,8 +17,8 @@ def main():
     output = predict(sys.argv[1], sys.argv[2], os.getcwd())
 
     # Save output for viewing
-    io.imsave("cropped_image.png", output)
-    print("Output saved to \"./cropped_image.png\"")
+    io.imsave("alpha_matte.png", output)
+    print("Output saved to \"./alpha_matte.png\"")
 
 if __name__ == '__main__':
     main()
