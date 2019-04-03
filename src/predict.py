@@ -7,7 +7,7 @@ Currently has to load all the weights everytime prediction is done.
 from pathlib import Path
 import torch
 import numpy as np
-from skimage import io
+from skimage import io, transform
 import sys
 
 sys.path.insert(0, 'src')
@@ -34,8 +34,17 @@ def predict(image_fn, trimap_fn, home_dir, use_trimap=True):
 
     # Read in images
     im, tri = io.imread(image_fn).astype(np.float)*(1./255), io.imread(trimap_fn).astype(np.float)*(1./255)
+    if(im.shape[0] != tri.shape[0] or im.shape[1] != tri.shape[1]):
+        raise TypeError('Image and trimap must have the same height and width dimensions.')
+    if(len(im.shape) == 4):
+        im = im[0]
+    if(len(tri.shape) == 4):
+        tri = tri[0]
     if(len(tri.shape) < 3):
         tri = np.expand_dims(tri, -1)
+    if(im.shape[0] != 320 or im.shape[1] != 320):
+        im = transform.resize(im, (320, 320, 3))
+        tri = transform.resize(tri, (320, 320, 1))
 
     # Convert images to torch objects and feed to network
     image, trimap = torch.FloatTensor(im.transpose((2,0,1))).unsqueeze(0).to(device), torch.FloatTensor(tri.transpose((2,0,1))).unsqueeze(0).to(device)
